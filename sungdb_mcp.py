@@ -474,43 +474,35 @@ def main():
     logger.info("Starting SungDB MCP Server...")
     logger.info("Press Ctrl+C to stop the server")
     
-    # Set up signal handlers - use the default behavior for STDIO mode
+    # Set up signal handlers
     import signal
+    import sys
     
     def signal_handler(signum, frame):
         logger.info(f"Received signal {signum}, shutting down gracefully...")
-        # Run cleanup synchronously
-        import asyncio
-        try:
-            # Try to clean up sessions if possible
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            loop.run_until_complete(cleanup())
-            loop.close()
-        except Exception as e:
-            logger.warning(f"Could not clean up sessions: {e}")
-        
+        # Force immediate exit for STDIO mode
         logger.info("SungDB MCP Server shutdown complete")
-        exit(0)
+        sys.exit(0)
     
     # Install signal handlers
     signal.signal(signal.SIGINT, signal_handler) 
     signal.signal(signal.SIGTERM, signal_handler)
     
     try:
-        # Run the server directly - FastMCP handles STDIO transport
-        mcp.run()
+        # Use STDIO mode (default) for MCP client compatibility
+        logger.info("Starting in STDIO mode for MCP client compatibility")
+        logger.info("Note: Use HTTP mode for testing - python sungdb_mcp.py --http")
+        
+        # Check for HTTP mode flag
+        if len(sys.argv) > 1 and sys.argv[1] == '--http':
+            logger.info("Running in HTTP mode on http://localhost:8000/mcp")
+            mcp.run(transport="http", host="localhost", port=8000)
+        else:
+            # Default STDIO mode
+            mcp.run()
+            
     except KeyboardInterrupt:
         logger.info("Received KeyboardInterrupt, shutting down...")
-        # Run cleanup
-        try:
-            import asyncio
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            loop.run_until_complete(cleanup())
-            loop.close()
-        except Exception as e:
-            logger.warning(f"Could not clean up sessions: {e}")
     except Exception as e:
         logger.error(f"Server error: {e}")
         import traceback
