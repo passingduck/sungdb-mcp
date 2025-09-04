@@ -13,6 +13,7 @@ import subprocess
 import tempfile
 import time
 import uuid
+import threading
 from pathlib import Path
 from typing import Dict, List, Optional, Any, Union
 import pexpect
@@ -461,24 +462,62 @@ mcp.add_tool(Tool.from_function(gdb_command, name="gdb_command", description="Ex
 
 async def cleanup():
     """Clean up all sessions"""
+    logger.info("Cleaning up all GDB sessions...")
     for session_id in list(SESSIONS.keys()):
-        await gdb_terminate(session_id)
+        try:
+            await gdb_terminate(session_id)
+        except Exception as e:
+            logger.error(f"Error terminating session {session_id}: {e}")
 
 def main():
     """Main entry point"""
-    # Handle shutdown gracefully
-    def signal_handler(signum, frame):
-        logger.info("Received shutdown signal, cleaning up...")
-        asyncio.create_task(cleanup())
+    logger.info("Starting SungDB MCP Server...")
+    logger.info("Press Ctrl+C to stop the server")
     
-    signal.signal(signal.SIGINT, signal_handler)
+    # Set up signal handlers - use the default behavior for STDIO mode
+    import signal
+    
+    def signal_handler(signum, frame):
+        logger.info(f"Received signal {signum}, shutting down gracefully...")
+        # Run cleanup synchronously
+        import asyncio
+        try:
+            # Try to clean up sessions if possible
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            loop.run_until_complete(cleanup())
+            loop.close()
+        except Exception as e:
+            logger.warning(f"Could not clean up sessions: {e}")
+        
+        logger.info("SungDB MCP Server shutdown complete")
+        exit(0)
+    
+    # Install signal handlers
+    signal.signal(signal.SIGINT, signal_handler) 
     signal.signal(signal.SIGTERM, signal_handler)
     
-    # Run the server
     try:
-        asyncio.run(mcp.run())
+        # Run the server directly - FastMCP handles STDIO transport
+        mcp.run()
+    except KeyboardInterrupt:
+        logger.info("Received KeyboardInterrupt, shutting down...")
+        # Run cleanup
+        try:
+            import asyncio
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            loop.run_until_complete(cleanup())
+            loop.close()
+        except Exception as e:
+            logger.warning(f"Could not clean up sessions: {e}")
+    except Exception as e:
+        logger.error(f"Server error: {e}")
+        import traceback
+        traceback.print_exc()
     finally:
-        asyncio.run(cleanup())
+        logger.info("SungDB MCP Server shutdown complete")
+
 
 if __name__ == "__main__":
     main()
